@@ -341,8 +341,6 @@ class CSRFile(perfEventSets: EventSets = new EventSets(Seq()))(implicit p: Param
     CSRs.mimpid -> UInt(0),
     CSRs.marchid -> UInt(0),
     CSRs.mvendorid -> UInt(0),
-    CSRs.mcycle -> reg_cycle,
-    CSRs.minstret -> reg_instret,
     CSRs.misa -> reg_misa,
     CSRs.mstatus -> read_mstatus,
     CSRs.mtvec -> reg_mtvec,
@@ -370,14 +368,34 @@ class CSRFile(perfEventSets: EventSets = new EventSets(Seq()))(implicit p: Param
   if (usingFPU)
     read_mapping ++= fp_csrs
 
-  for (((e, c), i) <- (reg_hpmevent.padTo(CSR.nHPM, UInt(0))
-                       zip reg_hpmcounter.map(x => x: UInt).padTo(CSR.nHPM, UInt(0))) zipWithIndex) {
-    read_mapping += (i + CSR.firstHPE) -> e // mhpmeventN
-    read_mapping += (i + CSR.firstMHPC) -> c // mhpmcounterN
-    if (usingUser) read_mapping += (i + CSR.firstHPC) -> c // hpmcounterN
+  if (coreParams.haveBasicCounters) {
+    read_mapping += CSRs.mcycle -> reg_cycle
+    read_mapping += CSRs.minstret -> reg_instret
+
+    for (((e, c), i) <- (reg_hpmevent.padTo(CSR.nHPM, UInt(0))
+                         zip reg_hpmcounter.map(x => x: UInt).padTo(CSR.nHPM, UInt(0))) zipWithIndex) {
+      read_mapping += (i + CSR.firstHPE) -> e // mhpmeventN
+      read_mapping += (i + CSR.firstMHPC) -> c // mhpmcounterN
+      if (usingUser) read_mapping += (i + CSR.firstHPC) -> c // hpmcounterN
+      if (xLen == 32) {
+        read_mapping += (i + CSR.firstMHPCH) -> c // mhpmcounterNh
+        if (usingUser) read_mapping += (i + CSR.firstHPCH) -> c // hpmcounterNh
+      }
+    }
+
+    if (usingUser) {
+      read_mapping += CSRs.mcounteren -> reg_mcounteren
+      read_mapping += CSRs.cycle -> reg_cycle
+      read_mapping += CSRs.instret -> reg_instret
+    }
+
     if (xLen == 32) {
-      read_mapping += (i + CSR.firstMHPCH) -> c // mhpmcounterNh
-      if (usingUser) read_mapping += (i + CSR.firstHPCH) -> c // hpmcounterNh
+      read_mapping += CSRs.mcycleh -> (reg_cycle >> 32)
+      read_mapping += CSRs.minstreth -> (reg_instret >> 32)
+      if (usingUser) {
+        read_mapping += CSRs.cycleh -> (reg_cycle >> 32)
+        read_mapping += CSRs.instreth -> (reg_instret >> 32)
+      }
     }
   }
 
@@ -408,21 +426,6 @@ class CSRFile(perfEventSets: EventSets = new EventSets(Seq()))(implicit p: Param
     read_mapping += CSRs.scounteren -> reg_scounteren
     read_mapping += CSRs.mideleg -> reg_mideleg
     read_mapping += CSRs.medeleg -> reg_medeleg
-  }
-
-  if (usingUser) {
-    read_mapping += CSRs.mcounteren -> reg_mcounteren
-    read_mapping += CSRs.cycle -> reg_cycle
-    read_mapping += CSRs.instret -> reg_instret
-  }
-
-  if (xLen == 32) {
-    read_mapping += CSRs.mcycleh -> (reg_cycle >> 32)
-    read_mapping += CSRs.minstreth -> (reg_instret >> 32)
-    if (usingUser) {
-      read_mapping += CSRs.cycleh -> (reg_cycle >> 32)
-      read_mapping += CSRs.instreth -> (reg_instret >> 32)
-    }
   }
 
   val pmpCfgPerCSR = xLen / new PMPConfig().getWidth
